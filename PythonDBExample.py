@@ -254,33 +254,59 @@ class Customer:
    # number of line items to the receipt, choosing products IDs from "products" list. Each product id in turn has a random quantity
    # quantity count count and associated extened price.
    # Paraeters are: connection, date, products, random number generator
-   def doOneDay(connection, date, products, rng):
-      if rng.random() < self.purchaseProb:
-         receiptId = self.addReceipt(connection, date)
-         # Determine the number of products to purchase
-         numProds = rng.randint(self.minProd, self.maxProd)
+   #Each customer also has a per-day likelihood of making a purchase, a min/max range of the number of products they'll randomly purchase, 
+   # and a min/max range of how many of each product they'll buy. Finally, they have a probability of reviewing each product on their 
+   # receipt. For each customer, generate a day's activity thus:
 
-         totalExtPrice = 0
-         
-         for i in range(numProds):
-            # Choose a random product
-            prodId, price = rng.choice(products)
-            #chech that the same item is not added twice
-            while prodId in self.favorites:
-               prodId, price = rng.choice(products)
-            qty = rng.randint(self.minRepeat, self.maxRepeat)
-            extPrice = qty * price
-            totalExtPrice += extPrice
-            self.addLineItem(connection, receiptId, prodId, qty, extPrice)
-            print(f"Added line item for product {prodId} with quantity {qty} and extended price {extPrice}")
-      
-      # update the total on the receipt
-      cursor = connection.cursor()
-      cursor.execute("UPDATE Receipt SET total = %s WHERE id = %s", (totalExtPrice, receiptId))
-      connection.commit()
+   def do_one_day(self, connection, date, products, rng):
+        cursor = connection.cursor()
 
-   
-   
+        # Check if the customer will make a purchase today
+        if rng.random() <= self.purchaseProb:
+            # Generate a receipt
+            cursor.execute("INSERT INTO Receipt (customerId, date) VALUES (%s, %s)", (self.id, date))
+            receiptID = cursor.lastrowid
+
+            # Determine the number of products to purchase
+            num_products = rng.randint(self.minProducts, self.maxProducts)
+
+            for _ in range(num_products):
+                # Choose a random product ID and quantity
+                product_id = rng.choice(products)
+                quantity = rng.randint(self.minQuantity, self.maxQuantity)
+
+                # Calculate the extended price (assuming price is fetched from the Product table)
+                cursor.execute("SELECT price FROM Product WHERE id = %s", (product_id,))
+                price = cursor.fetchone()[0]
+                extended_price = price * quantity
+
+                # Add line item to the receipt
+                cursor.execute(
+                    "INSERT INTO LineItem (receiptId, productId, quantity, extendedPrice) VALUES (%s, %s, %s, %s)",
+                    (receiptID, product_id, quantity, extended_price)
+                )
+
+                # Update the current Lot for the product (assuming a Lot table exists)
+                cursor.execute(
+                    "UPDATE Lot SET quantity = quantity - %s WHERE productId = %s AND quantity >= %s LIMIT 1",
+                    (quantity, product_id, quantity)
+                )
+                if cursor.rowcount == 0:
+                    # If no lot has enough quantity, create a new lot (assuming default values for new lots)
+                    cursor.execute(
+                        "INSERT INTO Lot (productId, quantity) VALUES (%s, %s)",
+                        (product_id, quantity)
+                    )
+
+                # Review the product
+                if rng.random() <= self.reviewProb:
+                    cursor.execute(
+                        "INSERT INTO Review (customerId, productId, date) VALUES (%s, %s, %s)",
+                        (self.id, product_id, date)
+                    )
+
+            connection.commit()
+
    #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
    #for each customer, call doOneDay for each day in the range.
    def runSimulation(connection, startDate, endDate, customers, products):
@@ -364,6 +390,26 @@ class Customer:
          cursor.execute("UPDATE Product SET lotSize = %s, currentLotId = NULL WHERE id = %s", (lotSize, row[0]))
       connection.commit()
 
+   # Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
+
+   def generateCustomers():
+      customers = []
+      for i in range(20):
+         lastName = random.choice(["Smith", "Johnson", "Davis", "Wilson", "Moore", "Taylor", "Anderson", "Thomas", "Harris"])
+         firstName = random.choice(["John", "Jane", "Sam", "Mary", "Sue", "Tom", "Ann", "Tim", "Holly"])
+         purchaseProb = random.uniform(0.1, 0.9)
+         minProd = random.randint(1, 3)
+         maxProd = random.randint(1, 3)
+         minRepeat = random.randint(1, 5)
+         maxRepeat = random.randint(1, 5)
+         reviewProb = random.uniform(0.1, 0.9)
+         age = random.randint(25, 75)
+         street = f"{random.randint(100, 999)} {random.choice(['Main', 'Elm', 'Oak', 'Pine', 'Maple', 'Birch', 'Cedar', 'Walnut', 'Chestnut'])} St"
+         city = random.choice(["Chicago", "Kansas City", "Houston", "Los Angeles", "New York", "Miami", "Columbus", "Philadelphia", "Atlanta"])
+         state = random.choice(["IL", "MO", "TX", "CA", "NY", "FL", "OH", "PA", "GA"])
+         customers.append(Customer(lastName, firstName, purchaseProb, minProd, maxProd, minRepeat, maxRepeat, reviewProb, age, street, city, state))
+      return customers
+
 
 def main():
    try:
@@ -380,8 +426,8 @@ def main():
       print(f"Connected to {connection.get_server_info()} as {connection.user}")
 
 
-            # create a list of 20 customers
-      customers = [
+      # create a list of 20 customers
+      """customers = [
          Customer("Smith", "John", 0.5, 1, 3, 1, 5, 0.1, 30, "123 Main St", "Chicago", "IL"),
          Customer("Johnson", "Jane", 0.75, 1, 3, 1, 5, 0.1, 25, "456 Elm St", "Kansas City", "MO"),
          Customer("Davis", "Sam", 0.25, 1, 3, 1, 5, 0.1, 40, "789 Oak St", "Houston", "TX"),
@@ -391,12 +437,16 @@ def main():
          Customer("Anderson", "Ann", 0.6, 1, 3, 1, 5, 0.1, 27, "404 Cedar St", "Columbus", "OH"),
          Customer("Thomas", "Tim", 0.4, 1, 3, 1, 5, 0.1, 45, "505 Walnut St", "Philadelphia", "PA"),
          Customer("Harris", "Holly", 0.7, 1, 3, 1, 5, 0.1, 33, "606 Chestnut St", "Atlanta", "GA"),
-      ]
+      ]"""
 
-      # add them to the database
+
+
+      # add customers generated to the database
+      customers = Customer.generateCustomers()
       for c in customers:
          c.insert(connection)
-      print("Customer added successfully")
+      print("Customers inserted successfully")
+      
 
       # Commit the transaction
       connection.commit()
