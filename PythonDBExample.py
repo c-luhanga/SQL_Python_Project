@@ -276,27 +276,34 @@ class Customer:
                 quantity = rng.randint(self.minQuantity, self.maxQuantity)
 
                 # Calculate the extended price (assuming price is fetched from the Product table)
-                cursor.execute("SELECT price FROM Product WHERE id = %s", (product_id,))
-                price = cursor.fetchone()[0]
+                cursor.execute("SELECT price, lotSize FROM Product WHERE id = %s", (product_id,))
+                product_info = cursor.fetchone()
+                price = product_info[0]
+                lot_size = product_info[1]
                 extended_price = price * quantity
+
+                # Check the current lot for the product
+                cursor.execute("SELECT id, quantity FROM Lot WHERE productId = %s ORDER BY id LIMIT 1", (product_id,))
+                lot = cursor.fetchone()
+                if lot:
+                    lot_id, lot_quantity = lot
+                    if lot_quantity >= quantity:
+                        # Update the lot quantity
+                        cursor.execute("UPDATE Lot SET quantity = quantity - %s WHERE id = %s", (quantity, lot_id))
+                    else:
+                        # Sell only the available quantity and create a new lot
+                        cursor.execute("UPDATE Lot SET quantity = 0 WHERE id = %s", (lot_id,))
+                        quantity_sold = lot_quantity
+                        quantity_remaining = quantity - lot_quantity
+                        cursor.execute("INSERT INTO Lot (productId, quantity, lotSize, expirationDate) VALUES (%s, %s, %s, DATE_ADD(%s, INTERVAL 5 DAY))", 
+                                       (product_id, lot_size, lot_size, date))
+                        quantity = quantity_sold
 
                 # Add line item to the receipt
                 cursor.execute(
                     "INSERT INTO LineItem (receiptId, productId, quantity, extendedPrice) VALUES (%s, %s, %s, %s)",
                     (receiptID, product_id, quantity, extended_price)
                 )
-
-                # Update the current Lot for the product (assuming a Lot table exists)
-                cursor.execute(
-                    "UPDATE Lot SET quantity = quantity - %s WHERE productId = %s AND quantity >= %s LIMIT 1",
-                    (quantity, product_id, quantity)
-                )
-                if cursor.rowcount == 0:
-                    # If no lot has enough quantity, create a new lot (assuming default values for new lots)
-                    cursor.execute(
-                        "INSERT INTO Lot (productId, quantity) VALUES (%s, %s)",
-                        (product_id, quantity)
-                    )
 
                 # Review the product
                 if rng.random() <= self.reviewProb:
@@ -309,6 +316,9 @@ class Customer:
 
    #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
    #for each customer, call doOneDay for each day in the range.
+
+   #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
+   #for each customer, call doOneDay for each day in the range.
    def runSimulation(connection, startDate, endDate, customers, products):
       rng = random.Random()
       rng.seed(100)
@@ -316,10 +326,7 @@ class Customer:
       date = startDate
       while date <= endDate:
          for c in customers:
-            if rng.random() < c.purchaseProb:
-               c.doOneDay(connection, date, products, rng)
-            if rng.random() < c.reviewProb:
-               c.doReview(connection, products, rng)
+            c.do_one_day(connection, date, products, rng)
          date += delta
 
    #Write a function to print the top 5 customers by total spending
@@ -330,6 +337,40 @@ class Customer:
       for row in cursor.fetchall():
          print(row)
 
+   #a function that will show changes made
+   def verify_changes(connection):
+    cursor = connection.cursor()
+
+    # Check the Flavor table
+    cursor.execute("SELECT * FROM Flavor")
+    flavors = cursor.fetchall()
+    print("Flavors:", flavors)
+
+    # Check the Kind table
+    cursor.execute("SELECT * FROM Kind")
+    kinds = cursor.fetchall()
+    print("Kinds:", kinds)
+
+    # Check the Product table
+    cursor.execute("SELECT id, kindId, flavorId FROM Product")
+    products = cursor.fetchall()
+    print("Products:", products)
+
+    # Check the CustomerXFlavor table
+    cursor.execute("SELECT * FROM CustomerXFlavor")
+    customer_x_flavors = cursor.fetchall()
+    print("CustomerXFlavor:", customer_x_flavors)
+
+    # Check the CustomerXKind table
+    cursor.execute("SELECT * FROM CustomerXKind")
+    customer_x_kinds = cursor.fetchall()
+    print("CustomerXKind:", customer_x_kinds)
+
+    # Check the Customer table to ensure the favorites column is dropped
+    cursor.execute("SHOW COLUMNS FROM Customer")
+    customer_columns = cursor.fetchall()
+    print("Customer Columns:", customer_columns)
+
    #Write a function to: 
    # 1. Create Kind and Flavor tables, populating them from Kind and Flavor values in Product
    #2. Replace the Product.kind and Product.flavor fields with FK links to Kind and Flavor
@@ -337,47 +378,53 @@ class Customer:
    #4. Fetch the favorites from the customer. Break this string up into a list of flavors and a list of kinds.  For each flavor and kind, *if* it is among the flavors and kinds in the database, add a row to the
    #appropriate join table. Otherwise, report the missing flavor or kind. Drop Customer.favorites.
    def normalize(connection):
-       cursor = connection.cursor()
-       cursor.execute("CREATE TABLE Kind (id INT(11) PRIMARY KEY AUTO_INCREMENT, kind VARCHAR(30))")
-       cursor.execute("CREATE TABLE Flavor (id INT(11) PRIMARY KEY AUTO_INCREMENT, flavor VARCHAR(30))")
-       cursor.execute("SELECT DISTINCT kind FROM Product")
-       for row in cursor.fetchall():
-           cursor.execute("INSERT INTO Kind (kind) VALUES (%s)", (row[0],))
-       cursor.execute("SELECT DISTINCT flavor FROM Product")
-       for row in cursor.fetchall():
-           cursor.execute("INSERT INTO Flavor (flavor) VALUES (%s)", (row[0],))
-       
-       # Add missing values to Flavor and Kind tables
-       missing_flavors = ["Carrot", "Appl", "Cassino", "Strawberry Twist"]
-       for flavor in missing_flavors:
-           cursor.execute("INSERT INTO Flavor (flavor) VALUES (%s)", (flavor,))
-       
-       cursor.execute("ALTER TABLE Product ADD COLUMN kindId INT(11)")
-       cursor.execute("ALTER TABLE Product ADD COLUMN flavorId INT(11)")
-       cursor.execute("UPDATE Product p JOIN Kind k ON p.kind = k.kind SET p.kindId = k.id")
-       cursor.execute("UPDATE Product p JOIN Flavor f ON p.flavor = f.flavor SET p.flavorId = f.id")
-       cursor.execute("CREATE TABLE CustomerXFlavor (customerId INT(11), flavorId INT(11), PRIMARY KEY (customerId, flavorId))")
-       cursor.execute("CREATE TABLE CustomerXKind (customerId INT(11), kindId INT(11), PRIMARY KEY (customerId, kindId))")
-       cursor.execute("SELECT id, favorites FROM Customer")
-       for row in cursor.fetchall():
-           customerId = row[0]
-           favs = row[1]
-           if favs:
-               fav_list = favs.split(", ")
-               for fav in fav_list:
-                   cursor.execute("SELECT id FROM Flavor WHERE flavor = %s", (fav,))
-                   result = cursor.fetchone()
-                   if result:
-                       cursor.execute("INSERT INTO CustomerXFlavor (customerId, flavorId) VALUES (%s, %s)", (customerId, result[0]))
-                   else:
-                       cursor.execute("SELECT id FROM Kind WHERE kind = %s", (fav,))
-                       result = cursor.fetchone()
-                       if result:
-                           cursor.execute("INSERT INTO CustomerXKind (customerId, kindId) VALUES (%s, %s)", (customerId, result[0]))
-                       else:
-                           print(f"Flavor or Kind {fav} not found in database")
-       cursor.execute("ALTER TABLE Customer DROP COLUMN favorites")
-       connection.commit()
+        cursor = connection.cursor()
+        
+        # Create Kind and Flavor tables
+        cursor.execute("CREATE TABLE Kind (id INT(11) PRIMARY KEY AUTO_INCREMENT, kind VARCHAR(30))")
+        cursor.execute("CREATE TABLE Flavor (id INT(11) PRIMARY KEY AUTO_INCREMENT, flavor VARCHAR(30))")
+        
+        # Populate Kind and Flavor tables from Product
+        cursor.execute("SELECT DISTINCT kind FROM Product")
+        for row in cursor.fetchall():
+            cursor.execute("INSERT INTO Kind (kind) VALUES (%s)", (row[0],))
+        cursor.execute("SELECT DISTINCT flavor FROM Product")
+        for row in cursor.fetchall():
+            cursor.execute("INSERT INTO Flavor (flavor) VALUES (%s)", (row[0],))
+        
+        # Replace Product.kind and Product.flavor with FK links to Kind and Flavor
+        cursor.execute("ALTER TABLE Product ADD COLUMN kindId INT(11)")
+        cursor.execute("ALTER TABLE Product ADD COLUMN flavorId INT(11)")
+        cursor.execute("UPDATE Product p JOIN Kind k ON p.kind = k.kind SET p.kindId = k.id")
+        cursor.execute("UPDATE Product p JOIN Flavor f ON p.flavor = f.flavor SET p.flavorId = f.id")
+        
+        # Add CustomerXFlavor and CustomerXKind join tables
+        cursor.execute("CREATE TABLE CustomerXFlavor (customerId INT(11), flavorId INT(11), PRIMARY KEY (customerId, flavorId))")
+        cursor.execute("CREATE TABLE CustomerXKind (customerId INT(11), kindId INT(11), PRIMARY KEY (customerId, kindId))")
+        
+        # Fetch favorites from Customer and populate join tables
+        cursor.execute("SELECT id, favorites FROM Customer")
+        for row in cursor.fetchall():
+            customerId = row[0]
+            favs = row[1]
+            if favs:
+                fav_list = favs.split(", ")
+                for fav in fav_list:
+                    cursor.execute("SELECT id FROM Flavor WHERE flavor = %s", (fav,))
+                    result = cursor.fetchone()
+                    if result:
+                        cursor.execute("INSERT INTO CustomerXFlavor (customerId, flavorId) VALUES (%s, %s)", (customerId, result[0]))
+                    else:
+                        cursor.execute("SELECT id FROM Kind WHERE kind = %s", (fav,))
+                        result = cursor.fetchone()
+                        if result:
+                            cursor.execute("INSERT INTO CustomerXKind (customerId, kindId) VALUES (%s, %s)", (customerId, result[0]))
+                        else:
+                            print(f"Flavor or Kind {fav} not found in database")
+        
+        # Drop Customer.favorites column
+        cursor.execute("ALTER TABLE Customer DROP COLUMN favorites")
+        connection.commit()
 
    #5. Add columns lotSize and currentLotId to Product. Set first to random value between 50 and 100. Set second to NULL. Each product will have a current "lot" -- an inventory of that product. As lots are consumed (or if none exists when a product is bought), a new lot is created and drawn from.
    def addInventory(connection):
@@ -389,6 +436,24 @@ class Customer:
          lotSize = random.randint(50, 100)
          cursor.execute("UPDATE Product SET lotSize = %s, currentLotId = NULL WHERE id = %s", (lotSize, row[0]))
       connection.commit()
+
+   # write a function that will print reciepts and the items they bought for a given customer
+   def printReceipts(connection, customerId):
+      cursor = connection.cursor()
+      cursor.execute("SELECT id, purchaseDate FROM Receipt WHERE customerId = %s", (customerId,))
+      for row in cursor.fetchall():
+         print(f"Receipt {row[0]} on {row[1]}")
+         cursor.execute("SELECT productId, qty, extPrice FROM LineItem WHERE receiptId = %s", (row[0],))
+         for item in cursor.fetchall():
+            print(f"Product {item[0]}: {item[1]} at {item[2]}")
+         print()
+
+   # write a fuction to print the reviews for a given customer for a given product
+   def printReviews(connection, customerId, productId):
+      cursor = connection.cursor()
+      cursor.execute("SELECT score, comment FROM Review WHERE customerId = %s AND productId = %s", (customerId, productId))
+      for row in cursor.fetchall():
+         print(f"Score: {row[0]}, Comment: {row[1]}")      
 
    # Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
 
@@ -413,70 +478,46 @@ class Customer:
 
 def main():
    try:
-      # Establish the connection
-      connection = mysql.connector.connect(
-         host='localhost',
-         database='BakeryBase',
-         user='root',
-         password='Th1s1smydatabase'
-      )
+        # Establish the connection
+        connection = mysql.connector.connect(
+            host='localhost',
+            database='BakeryBase',
+            user='cLuhanga',
+            password='nofunnystuff123'
+        )
 
-      if not connection.is_connected():
-         raise Exception(f"Failed to connect to database")
-      print(f"Connected to {connection.get_server_info()} as {connection.user}")
+        if not connection.is_connected():
+            raise Exception(f"Failed to connect to database")
+        print(f"Connected to {connection.get_server_info()} as {connection.user}")
 
+         # Create a cursor object to interact with the database
+        cursor = connection.cursor()
 
-      # create a list of 20 customers
-      """customers = [
-         Customer("Smith", "John", 0.5, 1, 3, 1, 5, 0.1, 30, "123 Main St", "Chicago", "IL"),
-         Customer("Johnson", "Jane", 0.75, 1, 3, 1, 5, 0.1, 25, "456 Elm St", "Kansas City", "MO"),
-         Customer("Davis", "Sam", 0.25, 1, 3, 1, 5, 0.1, 40, "789 Oak St", "Houston", "TX"),
-         Customer("Wilson", "Mary", 0.9, 1, 3, 1, 5, 0.1, 35, "101 Pine St", "Los Angeles", "CA"),
-         Customer("Moore", "Sue", 0.8, 1, 3, 1, 5, 0.1, 28, "202 Maple St", "New York", "NY"),
-         Customer("Taylor", "Tom", 0.3, 1, 3, 1, 5, 0.1, 32, "303 Birch St", "Miami", "FL"),
-         Customer("Anderson", "Ann", 0.6, 1, 3, 1, 5, 0.1, 27, "404 Cedar St", "Columbus", "OH"),
-         Customer("Thomas", "Tim", 0.4, 1, 3, 1, 5, 0.1, 45, "505 Walnut St", "Philadelphia", "PA"),
-         Customer("Harris", "Holly", 0.7, 1, 3, 1, 5, 0.1, 33, "606 Chestnut St", "Atlanta", "GA"),
-      ]"""
+        # Add customers generated to the database
+        customers = Customer.generateCustomers()
+        for c in customers:
+            c.insert(connection)
+        print("Customers inserted successfully")
 
+        # Simulate one day of activity for each customer
+        cursor.execute("SELECT id FROM Product")
+        products = [row[0] for row in cursor.fetchall()]
+        rng = random.Random()
+        date = "2023-10-01"  # Example date
 
+        for customer in customers:
+            customer.do_one_day(connection, date, products, rng)
 
-      # add customers generated to the database
-      customers = Customer.generateCustomers()
-      for c in customers:
-         c.insert(connection)
-      print("Customers inserted successfully")
-      
+        # Commit the transaction
+        connection.commit()
 
-      # Commit the transaction
-      connection.commit()
-      print("Data inserted successfully")
-
-      # lets normalize the database and add inventory only once check if the tables are already created
-      cursor = connection.cursor()
-      cursor.execute("SHOW TABLES")
-      tables = cursor.fetchall()
-      if ("Kind",) not in tables:
-         Customer.normalize(connection)
-         print("Database normalized successfully")
-      if ("lotSize",) not in tables:
-         Customer.addInventory(connection)
-         print("Inventory added successfully")
-      print("Data is already normalized and inventory is already added")
-      
-
-      # Get the list of customers from the database
-      cursor = connection.cursor()
-
-      
-   except Error as e:
-      print(f"Error: {e}")
+   except mysql.connector.Error as e:
+        print(f"Error: {e}")
 
    finally:
-      # Close the cursor and connection
-      if connection.is_connected():
-         connection.close()
-         print("MySQL connection closed")
+        if connection.is_connected():
+            connection.close()
+            print("MySQL connection closed")
 
 if __name__ == "__main__":
-   main()
+    main()
