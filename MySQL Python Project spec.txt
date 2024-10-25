@@ -1,0 +1,31 @@
+﻿Database Test System
+Overview
+Starting with the supplied BakeryBase.sql file, write a program that modifies the database as specified, then tests it by mock operations spanning several years, populating it with data in the process.
+[BakeryBase simplified on 2024-10-21 around 13:00: dropped Inventory table, added lotSize & currentLotId, so #5 is moot now. If you’ve already implemented using the old file, that’s fine.]
+Modifications
+1. Create Kind and Flavor tables, populating them from Kind and Flavor values in Product.
+2. Replace the Product.kind and Product.flavor fields with FK links to Kind and Flavor
+3. Add a CustomerXFlavor join table, and a CustomerXKind join table
+4. Fetch the favorites from the customer. Break this string up into a list of flavors and a list of kinds.  For each flavor and kind, *if* it is among the flavors or kinds in the database, add a row to the appropriate join table. Otherwise, report the missing flavor or kind. Drop Customer.favorites.
+5. Add columns lotSize and currentLotId to Product. Set first to random value between 50 and 100. Set second to NULL. [No longer needed, new BakeryBase adds these].
+Each product will have a current "lot" -- an inventory of that product. As Lots are consumed (or if none exists when a product is bought), a new lot is created and drawn from. 
+If a given order requests more of a product than is in the current Lot, e.g. an order for 5 items with only 3 left in the lost, then sell only the items in the current Lot, as might be the case e.g. if someone ordered Cake and used up the current supply, and we had to go bake some more. We'd sell them just the Cake we have, and make a new batch of Cake for the next order.
+Clarifications:
+Product.lotSize = how many products are made at a time. E.g. you can bake 50 Napoleon cakes at a time. This doesn't change.
+Lot.quantity = how many of the current lot/batch are on hand right now. This will change as products are consumed.
+Set expiration dates after the simulated date, perhaps 5 days later. You don’t need to worry about removing food after expiration dates – we’ll still sell expired food to keep it easy :)
+
+
+Mock DB Traffic
+1. Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
+2. Each customer also has a per-day likelihood of making a purchase, a min/max range of the number of products they'll randomly purchase, and a min/max range of how many of each product they'll buy. Finally, they have a probability of reviewing each product on their receipt.
+3. For each customer, generate a day's activity thus:
+1. Generate a receipt for the customer with likelihood purchaseProb
+2. Add the receipt to the database, with the given date
+3. Obtain the receiptID and use it to add a random number of line items to the receipt choosing product IDs and quantities from the customer's random ranges for these.
+4. Update the current Lot for each product, and create new Lots as needed.
+4. Run a full simulation taking start date and end data as two commandline parameters of standard date form YYYY-MM-DD.
+5. Be able to run a simulation that generates 100,000 LineItems in under 10 minutes. You may find it useful to adjust how you do commits to speed this up.
+
+
+Follow the following Style Rules.
