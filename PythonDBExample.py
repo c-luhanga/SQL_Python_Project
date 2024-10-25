@@ -1,7 +1,7 @@
-import mysql.connector
-from mysql.connector import Error
-import datetime
+import argparse
+from datetime import datetime, timedelta
 import random
+import mysql.connector
 
 """
 Database Schema for BakeryBase, on which the code below operates
@@ -165,32 +165,6 @@ INSERT INTO `Product` VALUES
 
 """
 
-# Example Code saved from the original generated code
-def sampleQueries(connection):
-    # Create a cursor object to interact with the database
-    cursor = connection.cursor()
-
-    # Example Query 1: SELECT query
-    cursor.execute("SELECT * FROM Customer LIMIT 5")
-
-    # Fetching the results
-    print("Results from SELECT query:")
-    for row in cursor.fetchall():
-        print(row)
-
-    # Example Query 2: INSERT query as prepared statement
-    # Do NOT use string formatting to insert data into query, e.g.
-    # insert_query = f"INSERT INTO your_table (column1, column2) VALUES
-    # ('{value1}', '{value2}')"
-    prep_stmt = "INSERT INTO your_table (column1, column2) VALUES (%s, %s)"
-    data = ('value1', 'value2')
-    cursor.execute(prep_stmt, data)
-    connection.commit()
-
-    # Commit the transaction
-    connection.commit()
-    print("Data inserted successfully")
-
 """
 Customer class represents a customer in the bakery database. The customer's behavior is modeled by the following attributes:
 *Likelihood of purchase per day 
@@ -214,6 +188,12 @@ class Customer:
         self.city = city
         self.state = state
 
+   def parse_arguments():
+      parser = argparse.ArgumentParser(description="Run a full simulation.")
+      parser.add_argument("start_date", type=str, help="Start date in YYYY-MM-DD format")
+      parser.add_argument("end_date", type=str, help="End date in YYYY-MM-DD format")
+      return parser.parse_args()
+   
 
    # insert a new customer into the database
    def insert(self, connection):
@@ -263,7 +243,7 @@ class Customer:
         # Generate a receipt
         cursor.execute("INSERT INTO Receipt (customerId, purchaseDate) VALUES (%s, %s)", (self.id, date))
         receiptID = cursor.lastrowid
-        print(f"Customer {self.id} made a purchase on {date} with receipt ID {receiptID}")
+
         # Determine the number of products to purchase
         if self.minProducts < self.maxProducts:
             num_products = rng.randint(self.minProducts, self.maxProducts)
@@ -280,13 +260,11 @@ class Customer:
             else:
                 quantity = self.minQuantity
 
-            print(f"Product ID: {product_id}, Quantity: {quantity}")
             # Calculate the extended price (assuming price is fetched from the Product table)
             cursor.execute("SELECT price FROM Product WHERE id = %s", (product_id,))
             product_info = cursor.fetchone()
             price = product_info[0]
             extended_price = price * quantity
-            print(f"Product ID: {product_id}, Quantity: {quantity}, Extended Price: {extended_price}")
 
             # Check the current lot for the product
             cursor.execute("SELECT id, quantity FROM Lot WHERE productId = %s ORDER BY id LIMIT 1", (product_id,))
@@ -304,7 +282,6 @@ class Customer:
                     cursor.execute("INSERT INTO Lot (productId, quantity, expirationDate) VALUES (%s, %s, DATE_ADD(%s, INTERVAL 5 DAY))", 
                                    (product_id, lot_size, date))
                     quantity = quantity_sold
-            print(f"Product ID: {product_id}, Quantity: {quantity}, Extended Price: {extended_price}")
 
             # Add line item to the receipt
             cursor.execute(
@@ -312,17 +289,25 @@ class Customer:
                 (receiptID, line_num, product_id, quantity, extended_price)
             )
             line_num += 1
-            print(f"Added line item to receipt {receiptID}")
 
-            # Review the product
+            ## Review the product
             if rng.random() <= self.reviewProb:
-               score = rng.randint(1, 5)  # Random score between 1 and 5
-               comment = "This is a standard review comment."  # Standard comment
+               # Check if a review already exists
                cursor.execute(
-                  "INSERT INTO Rating (customerId, productId, score, comment) VALUES (%s, %s, %s, %s)",
-                  (self.id, product_id, score, comment)
+                  "SELECT 1 FROM Rating WHERE customerId = %s AND productId = %s",
+                  (self.id, product_id)
                )
-               print(f"Customer {self.id} reviewed product {product_id} with score {score} on {date}")
+               if cursor.fetchone() is None:  # No existing review
+                  score = rng.randint(1, 5)  # Random score between 1 and 5
+                  comment = "This is a standard review comment."  # Standard comment
+                  cursor.execute(
+                        "INSERT INTO Rating (customerId, productId, score, comment) VALUES (%s, %s, %s, %s)",
+                        (self.id, product_id, score, comment)
+                  )
+                  print(f"Customer {self.id} reviewed product {product_id} with score {score} on {date}")
+               else:
+                  print(f"Customer {self.id} already reviewed product {product_id}, skipping.")
+
 
         connection.commit()
 
@@ -332,13 +317,29 @@ class Customer:
    #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
    #for each customer, call doOneDay for each day in the range.
    def run_simulation(connection, start_date, end_date, customers, products):
-    rng = random.Random()
-    current_date = start_date
+      rng = random.Random()
+      current_date = start_date
+      line_item_count = 0
 
-    while current_date <= end_date:
-        for customer in customers:
-            customer.do_one_day(connection, current_date, products, rng)
-        current_date += timedelta(days=1)
+      while line_item_count < 100000:
+         print(f"Simulating activity for date: {current_date.strftime('%Y-%m-%d')}")
+         
+         for customer in customers:
+               customer.do_one_day(connection, current_date, products, rng)
+         
+         # Update line item count after all customers' daily activity
+         cursor = connection.cursor()
+         cursor.execute("SELECT COUNT(*) FROM LineItem")
+         line_item_count = cursor.fetchone()[0]
+         print(f"Total LineItems so far: {line_item_count}")
+
+         # Check if the target has been reached
+         if line_item_count >= 100000:
+               print("100,000 line items reached")
+               break
+
+         # Advance to the next day
+         current_date += timedelta(days=1)
 
    #Write a function to print the top 5 customers by total spending
    def topCustomers(connection):
@@ -488,6 +489,9 @@ class Customer:
 
 
 def main():
+   args = Customer.parse_arguments()
+   start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+   end_date = datetime.strptime(args.end_date, "%Y-%m-%d")
    try:
         # Establish the connection
         connection = mysql.connector.connect(
@@ -501,37 +505,26 @@ def main():
             raise Exception(f"Failed to connect to database")
         print(f"Connected to {connection.get_server_info()} as {connection.user}")
 
-         # Create a cursor object to interact with the database
+        # Create a cursor object to interact with the database
         cursor = connection.cursor()
 
-        # print the number of customers in the database
-        cursor.execute("SELECT COUNT(*) FROM Customer")
-        count = cursor.fetchone()[0]
-        print(f"Number of customers: {count}")
-        
         # Add customers generated to the database
         customers = Customer.generateCustomers()
         for c in customers:
             c.insert(connection)
         print("Customers inserted successfully")
 
-      # print the number of customers in the database
+        # Print the number of customers in the database
         cursor.execute("SELECT COUNT(*) FROM Customer")
         count = cursor.fetchone()[0]
         print(f"Number of customers: {count}")
 
-        # Simulate one day of activity for each customer
-        print("Simulating one day of activity for each customer")
+        # Fetch products from the database
         cursor.execute("SELECT id FROM Product")
         products = [row[0] for row in cursor.fetchall()]
-        rng = random.Random()
-        date = "2023-10-01"  # Example date
 
-        for customer in customers:
-            customer.do_one_day(connection, date, products, rng)
-
-      # run the simulation for a number of days
-
+        # Run the simulation
+        Customer.run_simulation(connection, start_date, end_date, customers, products)
         # Commit the transaction
         connection.commit()
 
