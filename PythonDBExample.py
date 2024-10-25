@@ -341,14 +341,6 @@ class Customer:
          # Advance to the next day
          current_date += timedelta(days=1)
 
-   #Write a function to print the top 5 customers by total spending
-   def topCustomers(connection):
-      cursor = connection.cursor()
-      cursor.execute("SELECT c.id, c.lastName, c.firstName, SUM(li.extPrice) AS totalSpending FROM Customer c JOIN Receipt r ON c.id = r.customerId JOIN LineItem li ON r.id = li.receiptId GROUP BY c.id ORDER BY totalSpending DESC LIMIT 5")
-      print("Top 5 customers by total spending:")
-      for row in cursor.fetchall():
-         print(row)
-
    #a function that will show changes made
    def verify_changes(connection):
     cursor = connection.cursor()
