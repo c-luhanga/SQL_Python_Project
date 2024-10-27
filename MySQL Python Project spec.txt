@@ -15,17 +15,46 @@ Product.lotSize = how many products are made at a time. E.g. you can bake 50 Nap
 Lot.quantity = how many of the current lot/batch are on hand right now. This will change as products are consumed.
 Set expiration dates after the simulated date, perhaps 5 days later. You don’t need to worry about removing food after expiration dates – we’ll still sell expired food to keep it easy :)
 
-
 Mock DB Traffic
-1. Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
-2. Each customer also has a per-day likelihood of making a purchase, a min/max range of the number of products they'll randomly purchase, and a min/max range of how many of each product they'll buy. Finally, they have a probability of reviewing each product on their receipt.
-3. For each customer, generate a day's activity thus:
-1. Generate a receipt for the customer with likelihood purchaseProb
-2. Add the receipt to the database, with the given date
-3. Obtain the receiptID and use it to add a random number of line items to the receipt choosing product IDs and quantities from the customer's random ranges for these.
-4. Update the current Lot for each product, and create new Lots as needed.
+Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
+Each customer also has a per-day likelihood of making a purchase, a min/max range of the number of products they'll randomly purchase, and a min/max range of how many of each product they'll buy. Finally, they have a probability of reviewing each product on their receipt.
+For each customer, generate a day's activity thus:
+Generate a receipt for the customer with likelihood purchaseProb
+Add the receipt to the database, with the given date
+Obtain the receiptID and use it to add a random number of line items to the receipt choosing product IDs and quantities from the customer's random ranges for these.
+Update the current Lot for each product, and create new Lots as needed.
 4. Run a full simulation taking start date and end data as two commandline parameters of standard date form YYYY-MM-DD.
 5. Be able to run a simulation that generates 100,000 LineItems in under 10 minutes. You may find it useful to adjust how you do commits to speed this up.
 
-
 Follow the following Style Rules.
+
+
+Sample Queries 
+Here are some sample queries we’ve been using to check people’s work. They don’t guarantee a checkoff, but will help you know if you have problems.
+
+# 1 In < 10 mins, this should exceed 100,000 count and 1.1 avg(qty)
+select count(*), avg(qty) from LineItem; 
+
+# 2 The rest of these queries should give an empty set
+select * from LineItem li left join Product p on p.id = li.productId
+where price*qty <> extPrice;
+
+# 3 
+select lotSize from Product where lotSize < 20;
+
+# 4 Check that all lots were accurately drawn from
+select lotSize, (sum(qty) + quantity) as Used
+from LineItem li
+join Product p on p.id = li.productId
+join Lot lt on lt.id = li.lotId
+group by lt.id, lotSize having lotSize <> Used;
+
+# 5 
+select total, sum(extPrice) extTotal from Receipt r join LineItem li on
+li.receiptId = r.id group by r.id having total != extTotal;
+
+# 6 
+select lastVisit, max(purchaseDate) lastReceipt from Customer c join
+Receipt r on r.customerId = c.id group by c.id having lastReceipt is
+null or lastVisit is null or lastReceipt != lastVisit;
+

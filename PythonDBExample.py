@@ -4,7 +4,11 @@ import random
 import mysql.connector
 
 """
-Database Schema for BakeryBase, on which the code below operates
+DROP DATABASE IF EXISTS BakeryBase;
+CREATE DATABASE BakeryBase;
+USE BakeryBase;
+
+/* Schema */
 
 CREATE TABLE `Customer` (
    `id` INT(11) PRIMARY KEY Auto_Increment,
@@ -23,9 +27,24 @@ CREATE TABLE `Product` (
    `id` VARCHAR(20) Primary Key,
    `flavor` VARCHAR(30) DEFAULT NULL,
    `kind` VARCHAR(30) DEFAULT NULL,
-   `price` DECIMAL(6,2),
+   `price` DECIMAL(6,2) NOT NULL,
+   `lotSize` INT(11) DEFAULT NULL,
+   `currentLotId` INT(11) DEFAULT NULL,
    INDEX `INprice` (price)
 );
+
+CREATE TABLE `Lot` (
+   `id` INT(11) Primary Key Auto_Increment,
+   `productId` VARCHAR(20) NOT NULL,
+   `quantity` INT(11) DEFAULT NULL,
+   `expirationDate` DATE DEFAULT NULL,
+   CONSTRAINT `FKLot_productId` FOREIGN KEY (`productId`) 
+      REFERENCES `Product` (`id`)
+);
+
+alter table Product
+   ADD CONSTRAINT `FKProduct_currentLotId` FOREIGN KEY (`currentLotId`) 
+      REFERENCES `Lot` (`id`);
 
 CREATE TABLE `Receipt` (
    `id` INT(11) PRIMARY KEY AUTO_INCREMENT,
@@ -41,13 +60,16 @@ CREATE TABLE `LineItem` (
    `receiptId` INT(11) NOT NULL,
    `lineNum` INT(11) NOT NULL DEFAULT 1,
    `productId` VARCHAR(20) NOT NULL,
+   `lotId` INT(11) DEFAULT NULL,
    `qty` int(11) DEFAULT NULL,
    `extPrice` decimal(10,2) DEFAULT NULL,
    PRIMARY KEY (`receiptId`, `lineNum`),
    CONSTRAINT `FKLineItem_receiptId` FOREIGN KEY (`receiptId`)
       REFERENCES `Receipt` (`id`),
    CONSTRAINT `FKLineItem_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`)
+      REFERENCES `Product` (`id`),
+   CONSTRAINT `FKLineItem_lotId` FOREIGN KEY (`lotId`) 
+      REFERENCES `Lot` (`id`)
 );
 
 CREATE TABLE `Rating` (
@@ -78,26 +100,6 @@ CREATE TABLE `DiscountXProduct` (
       REFERENCES `Product` (`id`)
 );
 
-CREATE TABLE `Lot` (
-   `id` INT(11) Primary Key Auto_Increment,
-   `productId` VARCHAR(20) NOT NULL,
-   `quantity` INT(11) DEFAULT NULL,
-   `expirationDate` DATE DEFAULT NULL,
-   CONSTRAINT `FKLot_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`)
-);
-
-CREATE TABLE `Inventory` (
-   `productId` VARCHAR(20) Primary Key,
-   `lotSize` INT(11) DEFAULT NULL,
-   `currentLotId` INT(11) DEFAULT NULL,
-   CONSTRAINT `FKInventory_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`),
-   CONSTRAINT `FKInventory_currentLotId` FOREIGN KEY (`currentLotId`) 
-      REFERENCES `Lot` (`id`)
-);
-
-
 INSERT INTO `Customer` VALUES
    (1,'Logan','Juliet', 17, 'F', '402 Paradise Rd', 'Harrisburg', 'OR', 'Napoleon, Carrot, Cake', '2008-12-23'),
    (2,'Arzt','Terrell', 18, 'M', '8101 72nd Ave', 'Phoenix', 'AZ', 'Apricot, Strawberry, Cookie', '2013-11-02'),
@@ -122,46 +124,46 @@ INSERT INTO `Customer` VALUES
    (21,'Cheap', 'Joe', 20, 'M', '123 Skinflint Dr', 'Fulton', 'CA', '', NULL);
 
 INSERT INTO `Product` VALUES
-   ('20-BC-C-10','Chocolate','Cake',8.95),
-   ('20-BC-L-10','Lemon','Cake',8.95),
-   ('20-CA-7.5','Casino','Cake',15.95),
-   ('24-8x10','Opera','Cake',15.95),
-   ('25-STR-9','Strawberry','Cake',11.95),
-   ('26-8x10','Truffle','Cake',15.95),
-   ('45-CH','Chocolate','Eclair',3.25),
-   ('45-CO','Coffee','Eclair',3.5),
-   ('45-VA','Vanilla','Eclair',3.25),
-   ('46-11','Napoleon','Cake',13.49),
-   ('90-ALM-I','Almond','Tart',3.75),
-   ('90-APIE-10','Apple','Pie',5.25),
-   ('90-APP-11','Apple','Tart',3.25),
-   ('90-APR-PF','Apricot','Tart',3.25),
-   ('90-BER-11','Berry','Tart',3.25),
-   ('90-BLK-PF','Blackberry','Tart',3.25),
-   ('90-BLU-11','Blueberry','Tart',3.25),
-   ('90-CH-PF','Chocolate','Tart',3.75),
-   ('90-CHR-11','Cherry','Tart',3.25),
-   ('90-LEM-11','Lemon','Tart',3.25),
-   ('90-PEC-11','Pecan','Tart',3.75),
-   ('70-GA','Ganache','Cookie',1.15),
-   ('70-GON','Gongolais','Cookie',1.15),
-   ('70-R','Raspberry','Cookie',1.09),
-   ('70-LEM','Lemon','Cookie',0.79),
-   ('70-M-CH-DZ','Chocolate','Meringue',1.25),
-   ('70-M-VA-SM-DZ','Vanilla','Meringue',1.15),
-   ('70-MAR','Marzipan','Cookie',1.25),
-   ('70-TU','Tuile','Cookie',1.25),
-   ('70-W','Walnut','Cookie',0.79),
-   ('50-ALM','Almond','Croissant',1.45),
-   ('50-APP','Apple','Croissant',1.45),
-   ('50-APR','Apricot','Croissant',1.45),
-   ('50-CHS','Cheese','Croissant',1.75),
-   ('50-CH','Chocolate','Croissant',1.75),
-   ('51-APR','Apricot','Danish',1.15),
-   ('51-APP','Apple','Danish',1.15),
-   ('51-ATW','Almond','Twist',1.15),
-   ('51-BC','Almond','Bear Claw',1.95),
-   ('51-BLU','Blueberry','Danish',1.15);
+   ('20-BC-C-10','Chocolate','Cake',8.95, 30, NULL),
+   ('20-BC-L-10','Lemon','Cake',8.95, 40, NULL),
+   ('20-CA-7.5','Casino','Cake',15.95, 50, NULL),
+   ('24-8x10','Opera','Cake',15.95, 50, NULL),
+   ('25-STR-9','Strawberry','Cake',11.95, 50, NULL),
+   ('26-8x10','Truffle','Cake',15.95, 40, NULL),
+   ('45-CH','Chocolate','Eclair',3.25, 50, NULL),
+   ('45-CO','Coffee','Eclair',3.5, 50, NULL),
+   ('45-VA','Vanilla','Eclair',3.25, 50, NULL),
+   ('46-11','Napoleon','Cake',13.49, 50, NULL),
+   ('90-ALM-I','Almond','Tart',3.75, 50, NULL),
+   ('90-APIE-10','Apple','Pie',5.25, 50, NULL),
+   ('90-APP-11','Apple','Tart',3.25, 50, NULL),
+   ('90-APR-PF','Apricot','Tart',3.25, 50, NULL),
+   ('90-BER-11','Berry','Tart',3.25, 50, NULL),
+   ('90-BLK-PF','Blackberry','Tart',3.25, 50, NULL),
+   ('90-BLU-11','Blueberry','Tart',3.25, 50, NULL),
+   ('90-CH-PF','Chocolate','Tart',3.75, 50, NULL),
+   ('90-CHR-11','Cherry','Tart',3.25, 50, NULL),
+   ('90-LEM-11','Lemon','Tart',3.25, 50, NULL),
+   ('90-PEC-11','Pecan','Tart',3.75, 50, NULL),
+   ('70-GA','Ganache','Cookie',1.15, 50, NULL),
+   ('70-GON','Gongolais','Cookie',1.15, 50, NULL),
+   ('70-R','Raspberry','Cookie',1.09, 50, NULL),
+   ('70-LEM','Lemon','Cookie',0.79, 50, NULL),
+   ('70-M-CH-DZ','Chocolate','Meringue',1.25, 50, NULL),
+   ('70-M-VA-SM-DZ','Vanilla','Meringue',1.15, 50, NULL),
+   ('70-MAR','Marzipan','Cookie',1.25, 50, NULL),
+   ('70-TU','Tuile','Cookie',1.25, 50, NULL),
+   ('70-W','Walnut','Cookie',0.79, 50, NULL),
+   ('50-ALM','Almond','Croissant',1.45, 50, NULL),
+   ('50-APP','Apple','Croissant',1.45, 50, NULL),
+   ('50-APR','Apricot','Croissant',1.45, 50, NULL),
+   ('50-CHS','Cheese','Croissant',1.75, 50, NULL),
+   ('50-CH','Chocolate','Croissant',1.75, 50, NULL),
+   ('51-APR','Apricot','Danish',1.15, 50, NULL),
+   ('51-APP','Apple','Danish',1.15, 50, NULL),
+   ('51-ATW','Almond','Twist',1.15, 50, NULL),
+   ('51-BC','Almond','Bear Claw',1.95, 50, NULL),
+   ('51-BLU','Blueberry','Danish',1.15, 30, NULL);
 
 """
 
@@ -204,6 +206,7 @@ class Customer:
       connection.commit()
       self.id = cursor.lastrowid
 
+   
    def getProducts(connection):
       cursor = connection.cursor()
       cursor.execute("SELECT id, price FROM Product")
@@ -218,6 +221,33 @@ class Customer:
       connection.commit()
       return cursor.lastrowid
    
+   def initialize_inventory(connection):
+    cursor = connection.cursor()
+
+    # Fetch all products from the Product table
+    cursor.execute("SELECT id, lotSize FROM Product")
+    products = cursor.fetchall()
+
+    for product in products:
+        product_id, lot_size = product
+
+        # Create an initial lot for each product
+        cursor.execute(
+            "INSERT INTO Lot (productId, quantity, expirationDate) VALUES (%s, %s, DATE_ADD(CURDATE(), INTERVAL 5 DAY))",
+            (product_id, lot_size)
+        )
+        lot_id = cursor.lastrowid
+
+        # Update the Product table with the current lot ID
+        cursor.execute(
+            "UPDATE Product SET currentLotId = %s WHERE id = %s",
+            (lot_id, product_id)
+        )
+
+    # Commit the transaction
+    connection.commit()
+    print("Inventory initialized successfully")
+
    #write a addLineItem method that will add a line item to the database for the given receipt ID, product ID, quantity, and extended price
    def addLineItem(connection, receiptId, productId, qty, extPrice):
       cursor = connection.cursor()
@@ -237,143 +267,113 @@ class Customer:
 
    def do_one_day(self, connection, date, products, rng):
     cursor = connection.cursor()
-    print(f"Customer {self.id} is making a purchase on {date}")
+    
     # Check if the customer will make a purchase today
     if rng.random() <= self.purchaseProb:
         # Generate a receipt
         cursor.execute("INSERT INTO Receipt (customerId, purchaseDate) VALUES (%s, %s)", (self.id, date))
         receiptID = cursor.lastrowid
 
-        # Determine the number of products to purchase
-        if self.minProducts < self.maxProducts:
-            num_products = rng.randint(self.minProducts, self.maxProducts)
-        else:
-            num_products = self.minProducts
+        # Update the lastVisit column in the Customer table
+        cursor.execute("UPDATE Customer SET lastVisit = %s WHERE id = %s", (date, self.id))
 
-        line_num = 1 # Line number for the line items
+        # Determine the number of products to purchase
+        num_products = rng.randint(self.minProducts, self.maxProducts) if self.minProducts < self.maxProducts else self.minProducts
+
+        line_num = 1  # Line number for the line items
+        total_amount = 0  # Initialize total amount for the receipt
 
         for _ in range(num_products):
             # Choose a random product ID and quantity
             product_id = rng.choice(products)
-            if self.minQuantity < self.maxQuantity:
-                quantity = rng.randint(self.minQuantity, self.maxQuantity)
-            else:
-                quantity = self.minQuantity
+            quantity = rng.randint(self.minQuantity, self.maxQuantity) if self.minQuantity < self.maxQuantity else self.minQuantity
 
             # Calculate the extended price (assuming price is fetched from the Product table)
-            cursor.execute("SELECT price FROM Product WHERE id = %s", (product_id,))
+            cursor.execute("SELECT price, lotSize FROM Product WHERE id = %s", (product_id,))
             product_info = cursor.fetchone()
-            price = product_info[0]
+            price, lot_size = product_info[0], product_info[1]
             extended_price = price * quantity
+            total_amount += extended_price  # Add to total amount
 
-            # Check the current lot for the product
-            cursor.execute("SELECT id, quantity FROM Lot WHERE productId = %s ORDER BY id LIMIT 1", (product_id,))
-            lot = cursor.fetchone()
-            if lot:
+            # Track remaining quantity to fulfill
+            remaining_quantity = quantity
+            line_item_lots = []  # To store (lot_id, quantity) pairs for line item entry
+
+            # Fetch available lots in order for the selected product
+            cursor.execute("SELECT id, quantity FROM Lot WHERE productId = %s AND quantity > 0 ORDER BY id", (product_id,))
+            lots = cursor.fetchall()
+            
+            for lot in lots:
                 lot_id, lot_quantity = lot
-                if lot_quantity >= quantity:
-                    # Update the lot quantity
-                    cursor.execute("UPDATE Lot SET quantity = quantity - %s WHERE id = %s", (quantity, lot_id))
+                if remaining_quantity <= lot_quantity:
+                    # If the lot has enough quantity to fulfill the remaining quantity
+                    line_item_lots.append((lot_id, remaining_quantity))
+                    cursor.execute("UPDATE Lot SET quantity = quantity - %s WHERE id = %s", (remaining_quantity, lot_id))
+                    remaining_quantity = 0  # Order fulfilled
+                    break
                 else:
-                    # Sell only the available quantity and create a new lot
+                    # Use the entire lot quantity and continue to the next lot
+                    line_item_lots.append((lot_id, lot_quantity))
+                    remaining_quantity -= lot_quantity
                     cursor.execute("UPDATE Lot SET quantity = 0 WHERE id = %s", (lot_id,))
-                    quantity_sold = lot_quantity
-                    quantity_remaining = quantity - lot_quantity
-                    cursor.execute("INSERT INTO Lot (productId, quantity, expirationDate) VALUES (%s, %s, DATE_ADD(%s, INTERVAL 5 DAY))", 
-                                   (product_id, lot_size, date))
-                    quantity = quantity_sold
 
-            # Add line item to the receipt
-            cursor.execute(
-                "INSERT INTO LineItem (receiptId, lineNum, productId, qty, extPrice) VALUES (%s, %s, %s, %s, %s)",
-                (receiptID, line_num, product_id, quantity, extended_price)
-            )
-            line_num += 1
+            # If there's still remaining quantity, create a new lot
+            if remaining_quantity > 0:
+                cursor.execute(
+                    "INSERT INTO Lot (productId, quantity, expirationDate) VALUES (%s, %s, DATE_ADD(%s, INTERVAL 5 DAY))",
+                    (product_id, lot_size, date)
+                )
+                new_lot_id = cursor.lastrowid
+                cursor.execute("UPDATE Product SET currentLotId = %s WHERE id = %s", (new_lot_id, product_id))
+                
+                # Fulfill the remaining quantity from the new lot
+                line_item_lots.append((new_lot_id, remaining_quantity))
+                cursor.execute("UPDATE Lot SET quantity = quantity - %s WHERE id = %s", (remaining_quantity, new_lot_id))
 
-            ## Review the product
+            # Insert line items for each lot used in this transaction
+            for lot_id, qty in line_item_lots:
+                cursor.execute(
+                    "INSERT INTO LineItem (receiptId, lineNum, productId, lotId, qty, extPrice) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (receiptID, line_num, product_id, lot_id, qty, price * qty)
+                )
+                line_num += 1
+
+            # Review the product
             if rng.random() <= self.reviewProb:
-               # Check if a review already exists
-               cursor.execute(
-                  "SELECT 1 FROM Rating WHERE customerId = %s AND productId = %s",
-                  (self.id, product_id)
-               )
-               if cursor.fetchone() is None:  # No existing review
-                  score = rng.randint(1, 5)  # Random score between 1 and 5
-                  comment = "This is a standard review comment."  # Standard comment
-                  cursor.execute(
+                cursor.execute("SELECT 1 FROM Rating WHERE customerId = %s AND productId = %s", (self.id, product_id))
+                if cursor.fetchone() is None:  # No existing review
+                    score = rng.randint(1, 5)  # Random score between 1 and 5
+                    comment = "This is a standard review comment."
+                    cursor.execute(
                         "INSERT INTO Rating (customerId, productId, score, comment) VALUES (%s, %s, %s, %s)",
                         (self.id, product_id, score, comment)
-                  )
-                  print(f"Customer {self.id} reviewed product {product_id} with score {score} on {date}")
-               else:
-                  print(f"Customer {self.id} already reviewed product {product_id}, skipping.")
+                    )
 
+        # Update the total amount in the receipt
+        cursor.execute("UPDATE Receipt SET total = %s WHERE id = %s", (total_amount, receiptID))
 
+        # Commit transaction for this day's purchases
         connection.commit()
 
    #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
    #for each customer, call doOneDay for each day in the range.
 
-   #taking connection, startDate, endDate, customers, products as arguments write a function to run the simulation for a number of days
-   #for each customer, call doOneDay for each day in the range.
    def run_simulation(connection, start_date, end_date, customers, products):
-      rng = random.Random()
-      current_date = start_date
-      line_item_count = 0
+    rng = random.Random()
+    current_date = start_date
 
-      while line_item_count < 100000:
-         print(f"Simulating activity for date: {current_date.strftime('%Y-%m-%d')}")
-         
-         for customer in customers:
-               customer.do_one_day(connection, current_date, products, rng)
-         
-         # Update line item count after all customers' daily activity
-         cursor = connection.cursor()
-         cursor.execute("SELECT COUNT(*) FROM LineItem")
-         line_item_count = cursor.fetchone()[0]
-         print(f"Total LineItems so far: {line_item_count}")
+    while current_date <= end_date:
+        for customer in customers:
+                customer.do_one_day(connection, current_date, products, rng)
 
-         # Check if the target has been reached
-         if line_item_count >= 100000:
-               print("100,000 line items reached")
-               break
-
-         # Advance to the next day
-         current_date += timedelta(days=1)
-
-   #a function that will show changes made
-   def verify_changes(connection):
+        # Advance to the next day
+        current_date += timedelta(days=1)
+    
+    # print number of lines in the LineItem table
     cursor = connection.cursor()
-
-    # Check the Flavor table
-    cursor.execute("SELECT * FROM Flavor")
-    flavors = cursor.fetchall()
-    print("Flavors:", flavors)
-
-    # Check the Kind table
-    cursor.execute("SELECT * FROM Kind")
-    kinds = cursor.fetchall()
-    print("Kinds:", kinds)
-
-    # Check the Product table
-    cursor.execute("SELECT id, kindId, flavorId FROM Product")
-    products = cursor.fetchall()
-    print("Products:", products)
-
-    # Check the CustomerXFlavor table
-    cursor.execute("SELECT * FROM CustomerXFlavor")
-    customer_x_flavors = cursor.fetchall()
-    print("CustomerXFlavor:", customer_x_flavors)
-
-    # Check the CustomerXKind table
-    cursor.execute("SELECT * FROM CustomerXKind")
-    customer_x_kinds = cursor.fetchall()
-    print("CustomerXKind:", customer_x_kinds)
-
-    # Check the Customer table to ensure the favorites column is dropped
-    cursor.execute("SHOW COLUMNS FROM Customer")
-    customer_columns = cursor.fetchall()
-    print("Customer Columns:", customer_columns)
+    cursor.execute("SELECT COUNT(*) FROM LineItem")
+    count = cursor.fetchone()[0]
+    print(f"Number of line items: {count}")
 
    #Write a function to: 
    # 1. Create Kind and Flavor tables, populating them from Kind and Flavor values in Product
@@ -429,38 +429,9 @@ class Customer:
         # Drop Customer.favorites column
         cursor.execute("ALTER TABLE Customer DROP COLUMN favorites")
         connection.commit()
-
-   #5. Add columns lotSize and currentLotId to Product. Set first to random value between 50 and 100. Set second to NULL. Each product will have a current "lot" -- an inventory of that product. As lots are consumed (or if none exists when a product is bought), a new lot is created and drawn from.
-   def addInventory(connection):
-      cursor = connection.cursor()
-      cursor.execute("ALTER TABLE Product ADD COLUMN lotSize INT(11)")
-      cursor.execute("ALTER TABLE Product ADD COLUMN currentLotId INT(11)")
-      cursor.execute("SELECT id FROM Product")
-      for row in cursor.fetchall():
-         lotSize = random.randint(50, 100)
-         cursor.execute("UPDATE Product SET lotSize = %s, currentLotId = NULL WHERE id = %s", (lotSize, row[0]))
-      connection.commit()
-
-   # write a function that will print reciepts and the items they bought for a given customer
-   def printReceipts(connection, customerId):
-      cursor = connection.cursor()
-      cursor.execute("SELECT id, purchaseDate FROM Receipt WHERE customerId = %s", (customerId,))
-      for row in cursor.fetchall():
-         print(f"Receipt {row[0]} on {row[1]}")
-         cursor.execute("SELECT productId, qty, extPrice FROM LineItem WHERE receiptId = %s", (row[0],))
-         for item in cursor.fetchall():
-            print(f"Product {item[0]}: {item[1]} at {item[2]}")
-         print()
-
-   # write a fuction to print the reviews for a given customer for a given product
-   def printReviews(connection, customerId, productId):
-      cursor = connection.cursor()
-      cursor.execute("SELECT score, comment FROM Review WHERE customerId = %s AND productId = %s", (customerId, productId))
-      for row in cursor.fetchall():
-         print(f"Score: {row[0]}, Comment: {row[1]}")      
-
-   # Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
-
+    
+   # Generate more random customers, who will do automated purchasing. Each has first/last and age specifically wired into the code, but street, city, 
+   # and state randomly chosen from small sets of standard street names, with random street number, random city names, and perhaps a dozen representative US states.
    def generateCustomers():
       customers = []
       for i in range(20):
@@ -499,7 +470,11 @@ def main():
 
         # Create a cursor object to interact with the database
         cursor = connection.cursor()
-
+        
+        # Normalize the database
+        Customer.normalize(connection)
+        print("Database normalized successfully")
+        
         # Add customers generated to the database
         customers = Customer.generateCustomers()
         for c in customers:
@@ -515,6 +490,9 @@ def main():
         cursor.execute("SELECT id FROM Product")
         products = [row[0] for row in cursor.fetchall()]
 
+        # Initialize the inventory
+        Customer.initialize_inventory(connection)
+        
         # Run the simulation
         Customer.run_simulation(connection, start_date, end_date, customers, products)
         # Commit the transaction

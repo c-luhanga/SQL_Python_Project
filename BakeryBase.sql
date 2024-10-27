@@ -21,9 +21,24 @@ CREATE TABLE `Product` (
    `id` VARCHAR(20) Primary Key,
    `flavor` VARCHAR(30) DEFAULT NULL,
    `kind` VARCHAR(30) DEFAULT NULL,
-   `price` DECIMAL(6,2),
+   `price` DECIMAL(6,2) NOT NULL,
+   `lotSize` INT(11) DEFAULT NULL,
+   `currentLotId` INT(11) DEFAULT NULL,
    INDEX `INprice` (price)
 );
+
+CREATE TABLE `Lot` (
+   `id` INT(11) Primary Key Auto_Increment,
+   `productId` VARCHAR(20) NOT NULL,
+   `quantity` INT(11) DEFAULT NULL,
+   `expirationDate` DATE DEFAULT NULL,
+   CONSTRAINT `FKLot_productId` FOREIGN KEY (`productId`) 
+      REFERENCES `Product` (`id`)
+);
+
+alter table Product
+   ADD CONSTRAINT `FKProduct_currentLotId` FOREIGN KEY (`currentLotId`) 
+      REFERENCES `Lot` (`id`);
 
 CREATE TABLE `Receipt` (
    `id` INT(11) PRIMARY KEY AUTO_INCREMENT,
@@ -39,13 +54,16 @@ CREATE TABLE `LineItem` (
    `receiptId` INT(11) NOT NULL,
    `lineNum` INT(11) NOT NULL DEFAULT 1,
    `productId` VARCHAR(20) NOT NULL,
+   `lotId` INT(11) DEFAULT NULL,
    `qty` int(11) DEFAULT NULL,
    `extPrice` decimal(10,2) DEFAULT NULL,
    PRIMARY KEY (`receiptId`, `lineNum`),
    CONSTRAINT `FKLineItem_receiptId` FOREIGN KEY (`receiptId`)
       REFERENCES `Receipt` (`id`),
    CONSTRAINT `FKLineItem_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`)
+      REFERENCES `Product` (`id`),
+   CONSTRAINT `FKLineItem_lotId` FOREIGN KEY (`lotId`) 
+      REFERENCES `Lot` (`id`)
 );
 
 CREATE TABLE `Rating` (
@@ -76,26 +94,6 @@ CREATE TABLE `DiscountXProduct` (
       REFERENCES `Product` (`id`)
 );
 
-CREATE TABLE `Lot` (
-   `id` INT(11) Primary Key Auto_Increment,
-   `productId` VARCHAR(20) NOT NULL,
-   `quantity` INT(11) DEFAULT NULL,
-   `expirationDate` DATE DEFAULT NULL,
-   CONSTRAINT `FKLot_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`)
-);
-
-CREATE TABLE `Inventory` (
-   `productId` VARCHAR(20) Primary Key,
-   `lotSize` INT(11) DEFAULT NULL,
-   `currentLotId` INT(11) DEFAULT NULL,
-   CONSTRAINT `FKInventory_productId` FOREIGN KEY (`productId`) 
-      REFERENCES `Product` (`id`),
-   CONSTRAINT `FKInventory_currentLotId` FOREIGN KEY (`currentLotId`) 
-      REFERENCES `Lot` (`id`)
-);
-
-
 INSERT INTO `Customer` VALUES
    (1,'Logan','Juliet', 17, 'F', '402 Paradise Rd', 'Harrisburg', 'OR', 'Napoleon, Carrot, Cake', '2008-12-23'),
    (2,'Arzt','Terrell', 18, 'M', '8101 72nd Ave', 'Phoenix', 'AZ', 'Apricot, Strawberry, Cookie', '2013-11-02'),
@@ -120,43 +118,43 @@ INSERT INTO `Customer` VALUES
    (21,'Cheap', 'Joe', 20, 'M', '123 Skinflint Dr', 'Fulton', 'CA', '', NULL);
 
 INSERT INTO `Product` VALUES
-   ('20-BC-C-10','Chocolate','Cake',8.95),
-   ('20-BC-L-10','Lemon','Cake',8.95),
-   ('20-CA-7.5','Casino','Cake',15.95),
-   ('24-8x10','Opera','Cake',15.95),
-   ('25-STR-9','Strawberry','Cake',11.95),
-   ('26-8x10','Truffle','Cake',15.95),
-   ('45-CH','Chocolate','Eclair',3.25),
-   ('45-CO','Coffee','Eclair',3.5),
-   ('45-VA','Vanilla','Eclair',3.25),
-   ('46-11','Napoleon','Cake',13.49),
-   ('90-ALM-I','Almond','Tart',3.75),
-   ('90-APIE-10','Apple','Pie',5.25),
-   ('90-APP-11','Apple','Tart',3.25),
-   ('90-APR-PF','Apricot','Tart',3.25),
-   ('90-BER-11','Berry','Tart',3.25),
-   ('90-BLK-PF','Blackberry','Tart',3.25),
-   ('90-BLU-11','Blueberry','Tart',3.25),
-   ('90-CH-PF','Chocolate','Tart',3.75),
-   ('90-CHR-11','Cherry','Tart',3.25),
-   ('90-LEM-11','Lemon','Tart',3.25),
-   ('90-PEC-11','Pecan','Tart',3.75),
-   ('70-GA','Ganache','Cookie',1.15),
-   ('70-GON','Gongolais','Cookie',1.15),
-   ('70-R','Raspberry','Cookie',1.09),
-   ('70-LEM','Lemon','Cookie',0.79),
-   ('70-M-CH-DZ','Chocolate','Meringue',1.25),
-   ('70-M-VA-SM-DZ','Vanilla','Meringue',1.15),
-   ('70-MAR','Marzipan','Cookie',1.25),
-   ('70-TU','Tuile','Cookie',1.25),
-   ('70-W','Walnut','Cookie',0.79),
-   ('50-ALM','Almond','Croissant',1.45),
-   ('50-APP','Apple','Croissant',1.45),
-   ('50-APR','Apricot','Croissant',1.45),
-   ('50-CHS','Cheese','Croissant',1.75),
-   ('50-CH','Chocolate','Croissant',1.75),
-   ('51-APR','Apricot','Danish',1.15),
-   ('51-APP','Apple','Danish',1.15),
-   ('51-ATW','Almond','Twist',1.15),
-   ('51-BC','Almond','Bear Claw',1.95),
-   ('51-BLU','Blueberry','Danish',1.15);
+   ('20-BC-C-10','Chocolate','Cake',8.95, 30, NULL),
+   ('20-BC-L-10','Lemon','Cake',8.95, 40, NULL),
+   ('20-CA-7.5','Casino','Cake',15.95, 50, NULL),
+   ('24-8x10','Opera','Cake',15.95, 50, NULL),
+   ('25-STR-9','Strawberry','Cake',11.95, 50, NULL),
+   ('26-8x10','Truffle','Cake',15.95, 40, NULL),
+   ('45-CH','Chocolate','Eclair',3.25, 50, NULL),
+   ('45-CO','Coffee','Eclair',3.5, 50, NULL),
+   ('45-VA','Vanilla','Eclair',3.25, 50, NULL),
+   ('46-11','Napoleon','Cake',13.49, 50, NULL),
+   ('90-ALM-I','Almond','Tart',3.75, 50, NULL),
+   ('90-APIE-10','Apple','Pie',5.25, 50, NULL),
+   ('90-APP-11','Apple','Tart',3.25, 50, NULL),
+   ('90-APR-PF','Apricot','Tart',3.25, 50, NULL),
+   ('90-BER-11','Berry','Tart',3.25, 50, NULL),
+   ('90-BLK-PF','Blackberry','Tart',3.25, 50, NULL),
+   ('90-BLU-11','Blueberry','Tart',3.25, 50, NULL),
+   ('90-CH-PF','Chocolate','Tart',3.75, 50, NULL),
+   ('90-CHR-11','Cherry','Tart',3.25, 50, NULL),
+   ('90-LEM-11','Lemon','Tart',3.25, 50, NULL),
+   ('90-PEC-11','Pecan','Tart',3.75, 50, NULL),
+   ('70-GA','Ganache','Cookie',1.15, 50, NULL),
+   ('70-GON','Gongolais','Cookie',1.15, 50, NULL),
+   ('70-R','Raspberry','Cookie',1.09, 50, NULL),
+   ('70-LEM','Lemon','Cookie',0.79, 50, NULL),
+   ('70-M-CH-DZ','Chocolate','Meringue',1.25, 50, NULL),
+   ('70-M-VA-SM-DZ','Vanilla','Meringue',1.15, 50, NULL),
+   ('70-MAR','Marzipan','Cookie',1.25, 50, NULL),
+   ('70-TU','Tuile','Cookie',1.25, 50, NULL),
+   ('70-W','Walnut','Cookie',0.79, 50, NULL),
+   ('50-ALM','Almond','Croissant',1.45, 50, NULL),
+   ('50-APP','Apple','Croissant',1.45, 50, NULL),
+   ('50-APR','Apricot','Croissant',1.45, 50, NULL),
+   ('50-CHS','Cheese','Croissant',1.75, 50, NULL),
+   ('50-CH','Chocolate','Croissant',1.75, 50, NULL),
+   ('51-APR','Apricot','Danish',1.15, 50, NULL),
+   ('51-APP','Apple','Danish',1.15, 50, NULL),
+   ('51-ATW','Almond','Twist',1.15, 50, NULL),
+   ('51-BC','Almond','Bear Claw',1.95, 50, NULL),
+   ('51-BLU','Blueberry','Danish',1.15, 30, NULL);
